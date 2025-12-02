@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Test Execution Hook",
+  "description": "Automatically runs pytest on affected files and their dependencies when file changes occur in the src/ directory or when new files are added to tests/. Displays results to provide fast feedback and validate all Property-Based Tests.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.py",
+      "tests/**/*.py"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "pytest tests/ -v --tb=short -x"
+  }
+}

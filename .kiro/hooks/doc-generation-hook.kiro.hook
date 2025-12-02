@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Documentation Generator",
+  "description": "Automatically generates docstrings for newly implemented methods (e.g., FusionEngine.fuse()) that reference relevant Requirements and Properties, including Args, Returns, and validation references to maintain traceability",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.py"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the edited Python file and identify any new or modified methods/functions that lack comprehensive docstrings. For each method found:\n\n1. Generate a complete docstring that includes:\n   - A clear description of what the method does\n   - Args section with type hints and descriptions for all parameters\n   - Returns section describing the return value and type\n   - References to relevant Requirements (e.g., \"Validates: Req 6.1\") from .kiro/specs/realtime-sentiment-analysis/requirements.md\n   - References to relevant Properties (e.g., \"Validates: Prop 7\") from .kiro/specs/realtime-sentiment-analysis/design.md\n   - Any exceptions raised (if applicable)\n\n2. Pay special attention to:\n   - Core methods like FusionEngine.fuse(), analysis methods, and data processing functions\n   - Methods that implement specific requirements or properties\n   - Methods that handle multi-modal data (acoustic, visual, linguistic)\n\n3. Format the docstring using Google-style or NumPy-style docstring conventions\n\n4. Ensure traceability by explicitly linking the implementation to requirements and properties\n\n5. Add the generated docstrings to the appropriate methods in the file\n\nFocus on methods that represent significant blocks of functionality, especially those related to fusion logic, analysis modules, and data processing pipelines."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Deploy Streamlit Application",
+  "description": "Manually triggered deployment that builds and deploys the Streamlit application container to a target URL, enabling instant sharing of the working PoC interface",
+  "version": "1",
+  "when": {
+    "type": "userPrompt"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "./scripts/deploy.sh"
+  }
+}

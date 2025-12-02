@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Scaffold Analysis Module",
+  "description": "Generates boilerplate code for a new analysis module (e.g., AcousticAnalyzer) with __init__ that takes a Redis connection, async consume_redis_stream method, and placeholder for result caching",
+  "version": "1",
+  "when": {
+    "type": "userPrompt"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The user wants to scaffold a new analysis module. Generate a complete Python class file for an analysis module with the following structure:\n\n1. A class that takes a Redis connection object in __init__\n2. An async def consume_redis_stream(self): method that uses redis.asyncio to consume from a Redis stream\n3. Placeholder methods for result caching with timestamps\n4. Proper imports including redis.asyncio, asyncio, logging, and relevant data models\n5. Error handling following the error-handling.md patterns\n6. Type hints on all methods\n7. Docstrings explaining the module's purpose\n\nThe module should follow these architectural patterns:\n- Use redis.asyncio for async Redis operations (never blocking calls)\n- Implement graceful error handling that returns low-confidence results on failure\n- Include confidence scoring in results\n- Use structured logging\n- Follow the data model standards with dataclasses\n\nAsk the user for the module name (e.g., \"AcousticAnalyzer\", \"VisualAnalyzer\", \"LinguisticAnalyzer\") and then generate the complete boilerplate file at the appropriate location in src/analysis/.\n\nThe generated code should be production-ready and follow all the patterns defined in the steering documents, particularly async-architecture.md, error-handling.md, and data-models.md."
+  }
+}
