@@ -18,7 +18,7 @@
   - **Property: Data model round-trip consistency**
   - **Validates: Requirements 1.2, 1.3, 1.4**
 
-- [ ] 3. Implement Stream Input Manager
+- [x] 3. Implement Stream Input Manager
   - Create StreamInputManager class with connection handling
   - Implement stream decoding for local video files (MVP scope)
   - Implement audio frame extraction (PCM format, 16kHz sample rate)
@@ -26,7 +26,7 @@
   - Add frame timestamping
   - _Requirements: 1.1, 8.1, 8.2_
 
-- [ ] 3.1 Add Redis Streams integration for frame publishing
+- [x] 3.1 Add Redis Streams integration for frame publishing
   - Set up Redis connection and stream creation
   - Implement async audio frame publishing to Redis
   - Implement async video frame publishing to Redis
