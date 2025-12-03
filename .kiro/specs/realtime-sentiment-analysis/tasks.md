@@ -33,14 +33,14 @@
   - Add frame serialization for Redis storage
   - _Requirements: 1.1, 9.1_
 
-- [ ]* 3.2 Write unit tests for Stream Input Manager
+- [x] 3.2 Write unit tests for Stream Input Manager
   - Test connection to local video file
   - Test audio frame extraction and format
   - Test video frame extraction and format
   - Test frame timestamping accuracy
   - _Requirements: 1.1, 8.2_
 
-- [ ] 4. Implement Acoustic Analysis Module
+- [x] 4. Implement Acoustic Analysis Module
   - Create AcousticAnalyzer class with Redis consumer
   - Implement audio feature extraction using librosa (pitch, energy, speaking rate, spectral features)
   - Integrate pre-trained emotion recognition model (wav2vec2 or similar)
@@ -48,22 +48,22 @@
   - Add result caching with timestamps
   - _Requirements: 1.2, 3.1, 3.2_
 
-- [ ] 4.1 Add noise filtering and quality indicators
+- [x] 4.1 Add noise filtering and quality indicators
   - Implement spectral subtraction for noise filtering
   - Add audio quality assessment
   - Report quality indicators in AcousticResult
   - Adjust confidence based on audio quality
   - _Requirements: 3.3, 3.5_
 
-- [ ]* 4.2 Write property test for acoustic feature extraction
+- [x] 4.2 Write property test for acoustic feature extraction
   - **Property 1: Acoustic feature extraction completeness**
   - **Validates: Requirements 1.2, 3.1, 3.2**
 
-- [ ]* 4.3 Write property test for acoustic emotion classification
+- [x] 4.3 Write property test for acoustic emotion classification
   - **Property: Acoustic emotion scores structure**
   - **Validates: Requirements 3.2**
 
-- [ ] 5. Implement Visual Analysis Module
+- [x] 5. Implement Visual Analysis Module
   - Create VisualAnalyzer class with Redis consumer
   - Implement face detection using MediaPipe or OpenCV
   - Implement facial landmark extraction
@@ -73,14 +73,14 @@
   - Implement frame skipping (process every 2nd or 3rd frame)
   - _Requirements: 1.3, 4.1, 4.2, 4.3_
 
-- [ ] 5.1 Add quality indicators for visual analysis
+- [x] 5.1 Add quality indicators for visual analysis
   - Detect face occlusion using landmark visibility
   - Assess lighting quality from image statistics
   - Report quality indicators in VisualResult
   - Adjust confidence based on visual quality
   - _Requirements: 4.5_
 
-- [ ]* 5.2 Write property test for visual feature extraction
+- [x] 5.2 Write property test for visual feature extraction
   - **Property 2: Visual feature extraction completeness**
   - **Validates: Requirements 1.3, 4.1, 4.2, 4.3**
 
