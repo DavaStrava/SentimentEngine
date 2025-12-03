@@ -14,7 +14,7 @@
   - Create base interfaces for analysis modules
   - _Requirements: 1.2, 1.3, 1.4, 3.1, 4.1, 5.1, 6.1_
 
-- [x]* 2.1 Write property test for data model serialization
+- [x] 2.1 Write property test for data model serialization
   - **Property: Data model round-trip consistency**
   - **Validates: Requirements 1.2, 1.3, 1.4**
 
