@@ -102,7 +102,7 @@
   - **Property 5: Multi-face video handling**
   - **Validates: Requirements 4.4**
 
-- [ ] 7. Implement Linguistic Analysis Module
+- [x] 7. Implement Linguistic Analysis Module
   - Create LinguisticAnalyzer class with Redis consumer
   - Implement audio buffering (sliding window of 3-5 seconds)
   - Integrate Whisper for speech-to-text transcription
@@ -112,7 +112,7 @@
   - Implement lower-frequency processing (every 2-3 seconds)
   - _Requirements: 1.4, 5.1, 5.2, 5.3_
 
-- [ ] 7.1 Add transcription quality indicators
+- [x] 7.1 Add transcription quality indicators
   - Report transcription confidence from Whisper
   - Adjust linguistic sentiment confidence based on transcription quality
   - Handle low-confidence transcriptions gracefully
@@ -129,7 +129,7 @@
 - [ ] 8. Checkpoint - Ensure all analysis modules work independently
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Implement Fusion Engine
+- [x] 9. Implement Fusion Engine
   - Create FusionEngine class with 1-second timer
   - Implement result querying from analysis module caches
   - Implement confidence-weighted fusion formula
@@ -137,7 +137,7 @@
   - Normalize scores to [-1, 1] range
   - _Requirements: 1.5, 6.1, 6.4_
 
-- [ ] 9.1 Add conflict resolution and temporal smoothing
+- [x] 9.1 Add conflict resolution and temporal smoothing
   - Implement conflict resolution rules (reduce outlier weight when two modalities agree)
   - Apply exponential moving average for temporal smoothing (α=0.3)
   - Report confidence levels that reflect modality agreement
