@@ -21,10 +21,11 @@ import cv2
 import redis.asyncio as redis
 import mediapipe as mp
 
-from src.models.frames import VideoFrame
-from src.models.features import FaceLandmarks
+from src.models.frames import VideoFrame, AudioFrame
+from src.models.features import FaceLandmarks, FaceRegion
 from src.models.results import VisualResult
 from src.config.config_loader import config
+from src.analysis.av_sync import AudioVisualSync
 
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class VisualAnalyzer:
         self.max_faces = config.get('visual.max_faces', 5)
         self.redis_url = config.get('redis.url', 'redis://localhost:6379')
         self.video_stream = config.get('redis.video_stream', 'video_frames')
+        self.audio_stream = config.get('redis.audio_stream', 'audio_frames')
         
         # MediaPipe models (initialized lazily)
         self.mp_face_detection = mp.solutions.face_detection
@@ -70,8 +72,12 @@ class VisualAnalyzer:
         self.face_detection: Optional[mp.solutions.face_detection.FaceDetection] = None
         self.face_mesh: Optional[mp.solutions.face_mesh.FaceMesh] = None
         
+        # Audio-visual synchronization
+        self.av_sync = AudioVisualSync()
+        
         # Result cache
         self.latest_result: Optional[VisualResult] = None
+        self.latest_audio_frame: Optional[AudioFrame] = None
         
         # Frame skipping
         self.frame_counter = 0
@@ -113,80 +119,86 @@ class VisualAnalyzer:
             logger.error(f"Failed to load MediaPipe models: {e}", exc_info=True)
             raise
     
-    def _detect_face(self, image: np.ndarray) -> tuple[bool, Optional[np.ndarray]]:
-        """Detect face in the image using MediaPipe.
+    def _detect_faces(self, image: np.ndarray) -> List[tuple[int, int, int, int]]:
+        """Detect all faces in the image using MediaPipe.
         
         Args:
             image: RGB image array (H, W, 3)
             
         Returns:
-            Tuple of (face_detected, bounding_box) where bounding_box is
-            [x, y, width, height] or None if no face detected
+            List of bounding boxes as (x, y, width, height) tuples
+            Empty list if no faces detected
         """
         try:
             results = self.face_detection.process(image)
             
             if not results.detections:
-                return False, None
+                return []
             
-            # Get first detection (primary face)
-            detection = results.detections[0]
-            bbox = detection.location_data.relative_bounding_box
+            # Extract all detections up to max_faces
+            bboxes = []
+            for detection in results.detections[:self.max_faces]:
+                bbox = detection.location_data.relative_bounding_box
+                
+                # Convert relative coordinates to absolute
+                h, w = image.shape[:2]
+                x = int(bbox.xmin * w)
+                y = int(bbox.ymin * h)
+                width = int(bbox.width * w)
+                height = int(bbox.height * h)
+                
+                bboxes.append((x, y, width, height))
             
-            # Convert relative coordinates to absolute
-            h, w = image.shape[:2]
-            x = int(bbox.xmin * w)
-            y = int(bbox.ymin * h)
-            width = int(bbox.width * w)
-            height = int(bbox.height * h)
-            
-            return True, np.array([x, y, width, height])
+            return bboxes
             
         except Exception as e:
             logger.warning(f"Face detection failed: {e}")
-            return False, None
+            return []
     
-    def _extract_landmarks(self, image: np.ndarray) -> Optional[FaceLandmarks]:
-        """Extract facial landmarks using MediaPipe Face Mesh.
+    def _extract_landmarks_all(self, image: np.ndarray) -> List[FaceLandmarks]:
+        """Extract facial landmarks for all faces using MediaPipe Face Mesh.
         
         Args:
             image: RGB image array (H, W, 3)
             
         Returns:
-            FaceLandmarks object with landmark points and confidence,
-            or None if extraction fails
+            List of FaceLandmarks objects, one per detected face
+            Empty list if extraction fails
         """
         try:
             results = self.face_mesh.process(image)
             
             if not results.multi_face_landmarks:
-                return None
+                return []
             
-            # Get first face landmarks
-            face_landmarks = results.multi_face_landmarks[0]
-            
-            # Convert landmarks to numpy array
+            # Extract landmarks for all faces
+            all_landmarks = []
             h, w = image.shape[:2]
-            points = []
-            for landmark in face_landmarks.landmark:
-                x = landmark.x * w
-                y = landmark.y * h
-                points.append([x, y])
             
-            points_array = np.array(points, dtype=np.float32)
+            for face_landmarks in results.multi_face_landmarks:
+                # Convert landmarks to numpy array
+                points = []
+                for landmark in face_landmarks.landmark:
+                    x = landmark.x * w
+                    y = landmark.y * h
+                    points.append([x, y])
+                
+                points_array = np.array(points, dtype=np.float32)
+                
+                # Compute confidence based on landmark visibility
+                visibility_scores = [lm.visibility for lm in face_landmarks.landmark if hasattr(lm, 'visibility')]
+                confidence = float(np.mean(visibility_scores)) if visibility_scores else 0.8
+                
+                all_landmarks.append(FaceLandmarks(
+                    points=points_array,
+                    confidence=confidence
+                ))
             
-            # Compute confidence based on landmark visibility
-            visibility_scores = [lm.visibility for lm in face_landmarks.landmark if hasattr(lm, 'visibility')]
-            confidence = float(np.mean(visibility_scores)) if visibility_scores else 0.8
-            
-            return FaceLandmarks(
-                points=points_array,
-                confidence=confidence
-            )
+            return all_landmarks
             
         except Exception as e:
             logger.warning(f"Landmark extraction failed: {e}")
-            return None
+            return []
     
     def _assess_occlusion(self, landmarks: FaceLandmarks) -> float:
         """Assess face occlusion based on landmark visibility.
@@ -314,13 +326,15 @@ class VisualAnalyzer:
         intelligence from facial expressions while accounting for visual quality.
         
         The analysis pipeline:
-        1. Detects faces in the frame using MediaPipe (Req 4.1)
-        2. Extracts facial landmarks if face detected (Req 4.2)
-        3. Assesses occlusion based on landmark visibility (Req 4.5)
-        4. Assesses lighting quality from image statistics (Req 4.5)
-        5. Classifies facial expression into emotional categories (Req 4.3)
-        6. Adjusts confidence score based on quality indicators (Req 4.5)
-        7. Returns timestamped result for fusion engine consumption
+        1. Detects all faces in the frame using MediaPipe (Req 4.1)
+        2. Extracts facial landmarks for all detected faces (Req 4.2)
+        3. If multiple faces detected, uses audio-visual sync to identify primary speaker (Req 4.4)
+        4. Filters to primary speaker before emotion classification (Req 4.4)
+        5. Assesses occlusion based on landmark visibility (Req 4.5)
+        6. Assesses lighting quality from image statistics (Req 4.5)
+        7. Classifies facial expression into emotional categories (Req 4.3)
+        8. Adjusts confidence score based on quality indicators (Req 4.5)
+        9. Returns timestamped result for fusion engine consumption
         
         Error Handling:
         - VisualProcessingError: Returns low-confidence neutral result (confidence=0.1)
@@ -341,16 +355,18 @@ class VisualAnalyzer:
             - Req 4.1: System detects faces present in the frame
             - Req 4.2: System extracts facial landmarks and expression features
             - Req 4.3: System classifies expressions into emotional categories with confidence scores
+            - Req 4.4: System analyzes primary speaker based on audio-visual synchronization
             - Req 4.5: System reports quality indicators when face detection fails or face is occluded
             - Prop 2: Visual feature extraction completeness
+            - Prop 5: Multi-face video handling
         """
         try:
             image = video_frame.image
             
-            # Detect face
-            face_detected, bbox = self._detect_face(image)
+            # Detect all faces
+            bboxes = self._detect_faces(image)
             
-            if not face_detected:
+            if not bboxes:
                 # No face detected - return low confidence neutral result
                 logger.debug(f"No face detected in frame {video_frame.frame_number}")
                 result = VisualResult(
@@ -363,10 +379,10 @@ class VisualAnalyzer:
                 self.latest_result = result
                 return result
             
-            # Extract landmarks
-            landmarks = self._extract_landmarks(image)
+            # Extract landmarks for all faces
+            all_landmarks = self._extract_landmarks_all(image)
             
-            if landmarks is None:
+            if not all_landmarks:
                 # Landmark extraction failed
                 logger.debug(f"Landmark extraction failed for frame {video_frame.frame_number}")
                 result = VisualResult(
@@ -379,17 +395,58 @@ class VisualAnalyzer:
                 self.latest_result = result
                 return result
             
+            # Select primary face for analysis
+            primary_landmarks = None
+            
+            if len(all_landmarks) == 1:
+                # Single face - use it directly
+                primary_landmarks = all_landmarks[0]
+                logger.debug(f"Single face detected in frame {video_frame.frame_number}")
+            else:
+                # Multiple faces - use audio-visual sync to identify primary speaker
+                logger.debug(f"Multiple faces detected ({len(all_landmarks)}) in frame {video_frame.frame_number}")
+                
+                # Create FaceRegion objects for audio-visual sync
+                face_regions = []
+                for i, (bbox, landmarks) in enumerate(zip(bboxes, all_landmarks)):
+                    face_region = FaceRegion(
+                        bounding_box=bbox,
+                        landmarks=landmarks,
+                        face_id=i
+                    )
+                    face_regions.append(face_region)
+                
+                # Identify primary speaker using audio-visual sync
+                if self.latest_audio_frame is not None:
+                    primary_face_id = self.av_sync.identify_primary_speaker(
+                        face_regions,
+                        self.latest_audio_frame
+                    )
+                    
+                    if primary_face_id is not None:
+                        # Use the identified primary speaker
+                        primary_landmarks = all_landmarks[primary_face_id]
+                        logger.debug(f"Primary speaker identified: face_id={primary_face_id}")
+                    else:
+                        # No clear primary speaker - use first face as fallback
+                        primary_landmarks = all_landmarks[0]
+                        logger.debug("No clear primary speaker, using first face as fallback")
+                else:
+                    # No audio frame available - use first face as fallback
+                    primary_landmarks = all_landmarks[0]
+                    logger.debug("No audio frame available, using first face as fallback")
+            
             # Assess quality indicators
-            occlusion_score = self._assess_occlusion(landmarks)
+            occlusion_score = self._assess_occlusion(primary_landmarks)
             lighting_score = self._assess_lighting(image)
             quality_score = (occlusion_score + lighting_score) / 2.0
             
             # Classify expression
-            emotion_scores = self._classify_expression(image, landmarks)
+            emotion_scores = self._classify_expression(image, primary_landmarks)
             
             # Compute confidence (based on quality and detection confidence)
             max_emotion_score = max(emotion_scores.values())
-            base_confidence = max_emotion_score * landmarks.confidence
+            base_confidence = max_emotion_score * primary_landmarks.confidence
             adjusted_confidence = base_confidence * quality_score
             
             # Create result
@@ -397,7 +454,7 @@ class VisualAnalyzer:
                 emotion_scores=emotion_scores,
                 confidence=adjusted_confidence,
                 face_detected=True,
-                face_landmarks=landmarks,
+                face_landmarks=primary_landmarks,
                 timestamp=time.time()
             )
             
@@ -445,61 +502,53 @@ class VisualAnalyzer:
             - Design: Result caching with timestamps for non-blocking fusion
         """
         return self.latest_result
-
-    async def start(self):
-        """Start consuming video frames from Redis Streams asynchronously.
+    
+    def _deserialize_audio_frame(self, data: Dict) -> AudioFrame:
+        """Deserialize audio frame from Redis stream data.
         
-        This method runs as an independent asyncio task and continuously consumes
-        video frames from the Redis stream, analyzes them with frame skipping, and
-        caches results. It implements the asynchronous, event-driven architecture
-        that prevents slow modules from blocking fast ones.
+        Converts Redis stream message data back into an AudioFrame object for
+        audio-visual synchronization.
         
-        The method:
-        1. Initializes async Redis client connection
-        2. Loads MediaPipe face detection and face mesh models
-        3. Continuously reads from Redis Streams using non-blocking xread
-        4. Implements frame skipping (process every Nth frame) for performance
-        5. Deserializes and analyzes selected video frames
-        6. Caches timestamped results for Fusion Engine access
-        7. Handles errors gracefully without crashing the pipeline
+        Args:
+            data: Dictionary containing serialized audio frame data
+            
+        Returns:
+            Deserialized AudioFrame for audio-visual sync
+        """
+        # Deserialize audio samples
+        samples_bytes = data[b'samples']
+        samples = np.frombuffer(samples_bytes, dtype=np.float32)
         
-        Frame skipping is implemented to maintain real-time performance, as visual
-        analysis is computationally expensive. Processing every 2nd or 3rd frame
-        provides sufficient temporal resolution for emotion detection while meeting
-        latency requirements.
+        sample_rate = int(data[b'sample_rate'])
+        timestamp = float(data[b'timestamp'])
+        duration = float(data[b'duration'])
         
-        This task runs indefinitely until cancelled via asyncio.CancelledError,
-        enabling clean shutdown of the analysis pipeline.
+        return AudioFrame(
+            samples=samples,
+            sample_rate=sample_rate,
+            timestamp=timestamp,
+            duration=duration
+        )
+    
+    async def _consume_audio_frames(self):
+        """Consume audio frames for audio-visual synchronization.
         
-        Raises:
-            Exception: Fatal errors during initialization (Redis connection, model loading)
-                      are propagated to allow system to fail fast at startup
+        This background task continuously reads audio frames from Redis and caches
+        the latest one for use in audio-visual synchronization when multiple faces
+        are detected. This enables the visual analyzer to identify the primary speaker.
         
-        Validates:
-            - Req 1.1: System begins processing within 2 seconds of stream initiation
-            - Req 1.3: Visual Analysis Module extracts facial expression features continuously
-            - Req 9.1: End-to-end latency not exceeding 3 seconds
-            - Design: Asynchronous processing with independent asyncio tasks
-            - Design: Frame skipping (process every 2nd or 3rd frame)
-            - Design: Result caching with timestamps for non-blocking fusion
+        The task runs independently and updates self.latest_audio_frame, which is
+        accessed by analyze_frame() when needed for multi-face scenarios.
         """
         try:
-            # Initialize Redis client
-            self.redis_client = redis.from_url(self.redis_url)
-            logger.info(f"Connected to Redis at {self.redis_url}")
-            
-            # Load models
-            self._load_models()
-            
-            # Start consuming from stream
-            last_id = '0-0'  # Start from beginning
-            logger.info(f"Starting to consume from stream: {self.video_stream}")
+            last_id = '0-0'
+            logger.info(f"Starting to consume audio frames from: {self.audio_stream}")
             
             while True:
                 try:
-                    # Read from stream (blocking with timeout)
+                    # Read from audio stream (non-blocking with timeout)
                     messages = await self.redis_client.xread(
-                        {self.video_stream: last_id},
+                        {self.audio_stream: last_id},
                         block=100,  # 100ms timeout
                         count=1
                     )
@@ -507,47 +556,21 @@ class VisualAnalyzer:
                     if messages:
                         for stream_name, message_list in messages:
                             for message_id, data in message_list:
-                                # Increment frame counter
-                                self.frame_counter += 1
-                                
-                                # Frame skipping logic
-                                if self.frame_counter % self.frame_skip != 0:
-                                    # Skip this frame
-                                    last_id = message_id
-                                    continue
-                                
-                                # Deserialize video frame
-                                video_frame = self._deserialize_frame(data)
-                                
-                                # Analyze frame
-                                await self.analyze_frame(video_frame)
-                                
-                                # Update last_id for next read
+                                # Deserialize and cache audio frame
+                                self.latest_audio_frame = self._deserialize_audio_frame(data)
                                 last_id = message_id
                     
-                    # Small delay to prevent tight loop
                     await asyncio.sleep(0.01)
                     
                 except asyncio.CancelledError:
-                    logger.info("Visual analyzer task cancelled")
+                    logger.info("Audio frame consumer task cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"Error processing video frame: {e}", exc_info=True)
-                    await asyncio.sleep(0.1)  # Back off on error
+                    logger.error(f"Error consuming audio frame: {e}", exc_info=True)
+                    await asyncio.sleep(0.1)
                     
         except Exception as e:
-            logger.error(f"Fatal error in visual analyzer: {e}", exc_info=True)
-            raise
-        finally:
-            if self.redis_client:
-                await self.redis_client.close()
-                logger.info("Redis connection closed")
-            
-            # Clean up MediaPipe resources
-            if self.face_detection:
-                self.face_detection.close()
-            if self.face_mesh:
-                self.face_mesh.close()
+            logger.error(f"Fatal error in audio frame consumer: {e}", exc_info=True)
     
     def _deserialize_frame(self, data: Dict) -> VideoFrame:
         """Deserialize video frame from Redis stream data.
@@ -596,17 +619,19 @@ class VisualAnalyzer:
         
         This method runs as an independent asyncio task and continuously consumes
         video frames from the Redis stream, analyzes them with frame skipping, and
-        caches results. It implements the asynchronous, event-driven architecture
-        that prevents slow modules from blocking fast ones.
+        caches results. It also starts a background task to consume audio frames
+        for audio-visual synchronization in multi-face scenarios.
         
         The method:
         1. Initializes async Redis client connection
         2. Loads MediaPipe face detection and face mesh models
-        3. Continuously reads from Redis Streams using non-blocking xread
-        4. Implements frame skipping (process every Nth frame) for performance
-        5. Deserializes and analyzes selected video frames
-        6. Caches timestamped results for Fusion Engine access
-        7. Handles errors gracefully without crashing the pipeline
+        3. Starts background task to consume audio frames for AV sync
+        4. Continuously reads from Redis Streams using non-blocking xread
+        5. Implements frame skipping (process every Nth frame) for performance
+        6. Deserializes and analyzes selected video frames
+        7. Uses audio-visual sync to identify primary speaker when multiple faces detected
+        8. Caches timestamped results for Fusion Engine access
+        9. Handles errors gracefully without crashing the pipeline
         
         Frame skipping is implemented to maintain real-time performance, as visual
         analysis is computationally expensive. Processing every 2nd or 3rd frame
@@ -623,6 +648,7 @@ class VisualAnalyzer:
         Validates:
             - Req 1.1: System begins processing within 2 seconds of stream initiation
             - Req 1.3: Visual Analysis Module extracts facial expression features continuously
+            - Req 4.4: System analyzes primary speaker based on audio-visual synchronization
             - Req 9.1: End-to-end latency not exceeding 3 seconds
             - Design: Asynchronous processing with independent asyncio tasks
             - Design: Frame skipping (process every 2nd or 3rd frame)
@@ -635,6 +661,9 @@ class VisualAnalyzer:
             
             # Load models
             self._load_models()
+            
+            # Start audio frame consumer task for AV sync
+            audio_task = asyncio.create_task(self._consume_audio_frames())
             
             # Start consuming from stream
             last_id = '0-0'  # Start from beginning
@@ -675,6 +704,7 @@ class VisualAnalyzer:
                     
                 except asyncio.CancelledError:
                     logger.info("Visual analyzer task cancelled")
+                    audio_task.cancel()
                     break
                 except Exception as e:
                     logger.error(f"Error processing video frame: {e}", exc_info=True)

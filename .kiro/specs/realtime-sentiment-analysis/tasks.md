@@ -84,7 +84,7 @@
   - **Property 2: Visual feature extraction completeness**
   - **Validates: Requirements 1.3, 4.1, 4.2, 4.3**
 
-- [ ] 6. Implement Audio-Visual Synchronization Component
+- [x] 6. Implement Audio-Visual Synchronization Component
   - Create AudioVisualSync class
   - Extract lip movement features from facial landmarks
   - Compute audio energy and phoneme features
@@ -92,13 +92,13 @@
   - Return primary speaker face_id
   - _Requirements: 4.4_
 
-- [ ] 6.1 Integrate audio-visual sync into Visual Analysis Module
+- [x] 6.1 Integrate audio-visual sync into Visual Analysis Module
   - Call AudioVisualSync when multiple faces detected
   - Filter to primary speaker before emotion classification
   - Handle cases where no face correlates with audio
   - _Requirements: 4.4_
 
-- [ ]* 6.2 Write property test for multi-face handling
+- [x] 6.2 Write property test for multi-face handling
   - **Property 5: Multi-face video handling**
   - **Validates: Requirements 4.4**
 
@@ -118,11 +118,11 @@
   - Handle low-confidence transcriptions gracefully
   - _Requirements: 5.4_
 
-- [ ]* 7.2 Write property test for linguistic analysis completeness
+- [x] 7.2 Write property test for linguistic analysis completeness
   - **Property 3: Linguistic analysis completeness**
   - **Validates: Requirements 1.4, 5.1, 5.2, 5.3**
 
-- [ ]* 7.3 Write property test for domain-specific sentiment
+- [x] 7.3 Write property test for domain-specific sentiment
   - **Property 15: Domain-specific sentiment interpretation**
   - **Validates: Requirements 5.5**
 
