@@ -74,31 +74,89 @@ redis-server
 
 Edit `config/config.yaml` to customize model paths, fusion parameters, and other settings.
 
-## Usage
+## Testing the System
 
-### Run the Application
+You have several options to test SentimentEngine:
+
+### Option 1: Quick Demo (Recommended for First Test)
+
+Run the standalone demo with synthetic data - no models or video files required:
 
 ```bash
-python src/main.py
+python demo_simple.py
 ```
 
-The Streamlit UI will be available at http://localhost:8501
+This demonstrates:
+- All three analysis modules working
+- Fusion engine combining modalities
+- Graceful degradation when models aren't loaded
+- Processing 10 synthetic frames with real-time output
 
-### Run Tests
+### Option 2: Run Automated Tests
 
 ```bash
-# All tests
+# All tests (unit + property-based)
 pytest tests/
 
 # Unit tests only
 pytest tests/unit/
 
-# Property-based tests only
+# Property-based tests only (100+ iterations each)
 pytest tests/property/
 
-# With coverage
+# Specific test file
+pytest tests/property/test_property_01_acoustic_completeness.py -v
+
+# With coverage report
 pytest tests/ --cov=src --cov-report=html
 ```
+
+### Option 3: Test with Real Video
+
+Once you've downloaded the models (see Setup step 3):
+
+```bash
+# Process a video file
+python src/main.py --input path/to/video.mp4
+```
+
+### Option 4: Run with Streamlit UI
+
+Launch the interactive web interface:
+
+```bash
+# Using the helper script
+./run_streamlit.sh
+
+# Or using Python launcher
+python run_app.py
+```
+
+The UI will be available at http://localhost:8501
+
+**Note**: The Streamlit UI currently has some threading issues with asyncio. Use the demo script or automated tests for reliable testing.
+
+### Option 5: Verify Setup
+
+Check that all dependencies and components are properly configured:
+
+```bash
+python scripts/verify_setup.py
+```
+
+## What to Expect
+
+### Without Downloaded Models
+- System runs with graceful degradation
+- Acoustic analysis returns low-confidence neutral results
+- Visual and linguistic analysis work normally
+- Fusion engine combines all modalities successfully
+
+### With Downloaded Models
+- Full acoustic emotion recognition (happy, sad, angry, etc.)
+- Enhanced confidence scores
+- More accurate sentiment detection
+- Better emotion category breakdown
 
 ## Architecture
 
@@ -120,6 +178,8 @@ The system follows an asynchronous, event-driven architecture:
 
 ## Documentation
 
+- **Testing Guide**: `TESTING.md` - Comprehensive guide to all testing options
+- **Quick Start**: `QUICKSTART.md` - Get started in 5 minutes
 - Requirements: `.kiro/specs/realtime-sentiment-analysis/requirements.md`
 - Design: `.kiro/specs/realtime-sentiment-analysis/design.md`
 - Tasks: `.kiro/specs/realtime-sentiment-analysis/tasks.md`
