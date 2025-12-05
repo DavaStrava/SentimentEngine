@@ -372,7 +372,9 @@ def test_quality_weighted_fusion_with_three_modalities(confidence_a, confidence_
     # (lower than the 65% for two modalities due to the presence of a third modality)
     min_expected_contribution = 0.50 * expected_high_score
     
-    assert result.score >= min_expected_contribution, \
+    # Use a small epsilon for floating point comparison (1e-6)
+    epsilon = 1e-6
+    assert result.score >= min_expected_contribution - epsilon, \
         f"With three modalities and high acoustic confidence ({confidence_a:.2f} vs " \
         f"{confidence_b:.2f}, {confidence_c:.2f}), acoustic should contribute at least 50% " \
         f"(>= {min_expected_contribution:.3f}), but got {result.score:.3f}"

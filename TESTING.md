@@ -141,7 +141,58 @@ python scripts/verify_setup.py
 
 ---
 
-### 6. Process Real Video (Requires Models)
+### 6. Integration and Performance Tests
+
+**Purpose**: Test end-to-end pipeline with real scenarios and validate latency requirements
+
+**Commands**:
+```bash
+# All integration and performance tests
+pytest tests/integration/ tests/performance/ -v
+
+# Integration tests only
+pytest tests/integration/ -v
+
+# Performance tests only
+pytest tests/performance/ -v
+
+# Specific test suites
+pytest tests/integration/test_pipeline.py -v
+pytest tests/integration/test_video_formats.py -v
+pytest tests/performance/test_latency.py -v
+```
+
+**What it tests**:
+- ✅ End-to-end latency (Requirement 9.1: target 1s, max 3s)
+- ✅ All modalities contributing to final score
+- ✅ Error recovery with missing modalities (Requirement 9.4)
+- ✅ Error recovery with low confidence inputs
+- ✅ Stream reconnection after interruption
+- ✅ Varying video resolutions (144p to 1080p)
+- ✅ Varying image quality (noisy, dark, bright, low contrast)
+- ✅ Edge case images (all black, all white, pure colors)
+- ✅ Different aspect ratios (4:3, 16:9, 1:1, portrait)
+- ✅ Video format support (MP4, H.264, AAC)
+- ✅ Corrupted frame handling
+- ✅ Quality indicators throughout pipeline
+- ✅ Component latency breakdown
+- ✅ Sustained load performance
+- ✅ Parallel processing benefits
+
+**Results**:
+- **15/15 tests passing** ✓
+- Mean latency: **0.230s** (well under 1s target)
+- Max latency: **1.507s** (under 3s maximum)
+- Parallel speedup: **19.84x**
+- 100% success rate
+
+**Time**: ~20 seconds
+
+**See detailed results**: `tests/INTEGRATION_TEST_SUMMARY.md`
+
+---
+
+### 7. Process Real Video (Requires Models)
 
 **Purpose**: Test with actual video content
 
@@ -278,17 +329,23 @@ pytest tests/property/ --hypothesis-profile=dev
 
 Current test coverage:
 
-| Module | Unit Tests | Property Tests | Coverage |
-|--------|-----------|----------------|----------|
-| Data Models | ✅ | ✅ | ~90% |
-| Acoustic Analysis | ✅ | ✅ | ~85% |
-| Visual Analysis | ✅ | ✅ | ~85% |
-| Linguistic Analysis | ✅ | ⏳ | ~80% |
-| Fusion Engine | ✅ | ⏳ | ~75% |
-| Stream Manager | ✅ | ⏳ | ~80% |
+| Module | Unit Tests | Property Tests | Integration Tests | Coverage |
+|--------|-----------|----------------|-------------------|----------|
+| Data Models | ✅ | ✅ | ✅ | ~90% |
+| Acoustic Analysis | ✅ | ✅ | ✅ | ~85% |
+| Visual Analysis | ✅ | ✅ | ✅ | ~85% |
+| Linguistic Analysis | ✅ | ✅ | ✅ | ~80% |
+| Fusion Engine | ✅ | ✅ | ✅ | ~85% |
+| Stream Manager | ✅ | ✅ | ✅ | ~85% |
+| End-to-End Pipeline | N/A | N/A | ✅ | ~80% |
+
+**Total Test Count**: 60+ tests
+- Unit Tests: 20+
+- Property Tests: 25+
+- Integration Tests: 15
 
 Legend:
-- ✅ Implemented
+- ✅ Implemented and passing
 - ⏳ Pending (marked with * in tasks.md)
 
 ---

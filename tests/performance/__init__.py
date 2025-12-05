@@ -1,1 +1,1 @@
-"""Performance tests"""
+"""Performance tests for latency validation"""
