@@ -500,10 +500,18 @@ class LinguisticAnalyzer:
             # Apply domain adaptation
             emotion_scores = self._apply_domain_adaptation(transcription, emotion_scores)
             
-            # Compute confidence (based on transcription confidence and sentiment strength)
+            # Compute confidence (based on transcription confidence, sentiment strength, and stream quality)
             max_emotion_score = max(emotion_scores.values())
             base_confidence = max_emotion_score
-            adjusted_confidence = base_confidence * transcription_confidence
+            
+            # Calculate average stream quality from buffered frames
+            if self.audio_buffer:
+                avg_stream_quality = np.mean([frame.quality_score for frame in self.audio_buffer])
+            else:
+                avg_stream_quality = 1.0
+            
+            # Combine all quality factors
+            adjusted_confidence = base_confidence * transcription_confidence * avg_stream_quality
             
             # Create result
             result = LinguisticResult(
@@ -673,10 +681,14 @@ class LinguisticAnalyzer:
         sample_rate = int(data[b'sample_rate'])
         timestamp = float(data[b'timestamp'])
         duration = float(data[b'duration'])
+        quality_score = float(data.get(b'quality_score', b'1.0'))
+        codec = data.get(b'codec', b'unknown').decode('utf-8')
         
         return AudioFrame(
             samples=samples,
             sample_rate=sample_rate,
             timestamp=timestamp,
-            duration=duration
+            duration=duration,
+            quality_score=quality_score,
+            codec=codec
         )

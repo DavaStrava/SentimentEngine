@@ -436,10 +436,13 @@ class VisualAnalyzer:
                     primary_landmarks = all_landmarks[0]
                     logger.debug("No audio frame available, using first face as fallback")
             
-            # Assess quality indicators
+            # Assess quality indicators (combine stream quality with analysis quality)
             occlusion_score = self._assess_occlusion(primary_landmarks)
             lighting_score = self._assess_lighting(image)
-            quality_score = (occlusion_score + lighting_score) / 2.0
+            analysis_quality = (occlusion_score + lighting_score) / 2.0
+            stream_quality = video_frame.quality_score
+            # Combined quality is the minimum of both (conservative approach)
+            quality_score = min(analysis_quality, stream_quality)
             
             # Classify expression
             emotion_scores = self._classify_expression(image, primary_landmarks)
@@ -571,48 +574,6 @@ class VisualAnalyzer:
                     
         except Exception as e:
             logger.error(f"Fatal error in audio frame consumer: {e}", exc_info=True)
-    
-    def _deserialize_frame(self, data: Dict) -> VideoFrame:
-        """Deserialize video frame from Redis stream data.
-        
-        Converts Redis stream message data back into a VideoFrame object for analysis.
-        The serialization format uses pickle for numpy arrays and standard types for
-        metadata fields.
-        
-        Args:
-            data: Dictionary containing serialized frame data with keys:
-                 - 'image': Pickled numpy array of RGB image (H, W, 3)
-                 - 'timestamp': Float timestamp in seconds since stream start
-                 - 'frame_number': Integer sequential frame number
-            
-        Returns:
-            Deserialized VideoFrame ready for visual analysis
-            
-        Validates:
-            - Req 1.1: Continuous video processing through Redis Streams
-            - Design: Asynchronous frame distribution via Redis Streams
-        """
-        # TODO: Implement proper serialization/deserialization
-        # For now, assume data contains the necessary fields
-        
-        # Deserialize image
-        image_bytes = data[b'image']
-        # Assuming image is stored as flattened array with shape info
-        height = int(data[b'height'])
-        width = int(data[b'width'])
-        channels = int(data[b'channels'])
-        
-        image_flat = np.frombuffer(image_bytes, dtype=np.uint8)
-        image = image_flat.reshape((height, width, channels))
-        
-        timestamp = float(data[b'timestamp'])
-        frame_number = int(data[b'frame_number'])
-        
-        return VideoFrame(
-            image=image,
-            timestamp=timestamp,
-            frame_number=frame_number
-        )
 
     async def start(self):
         """Start consuming video frames from Redis Streams asynchronously.
@@ -736,12 +697,16 @@ class VisualAnalyzer:
                  - 'image': Pickled numpy array of RGB image (H, W, 3)
                  - 'timestamp': Float timestamp in seconds since stream start
                  - 'frame_number': Integer sequential frame number
+                 - 'quality_score': Float quality indicator (0.0 to 1.0)
+                 - 'codec': String codec name
+                 - 'resolution': String resolution (e.g., "1920x1080")
             
         Returns:
             Deserialized VideoFrame ready for visual analysis
             
         Validates:
             - Req 1.1: Continuous video processing through Redis Streams
+            - Req 8.3: Quality indicators for adaptive processing
             - Design: Asynchronous frame distribution via Redis Streams
         """
         # TODO: Implement proper serialization/deserialization
@@ -759,9 +724,16 @@ class VisualAnalyzer:
         
         timestamp = float(data[b'timestamp'])
         frame_number = int(data[b'frame_number'])
+        quality_score = float(data.get(b'quality_score', b'1.0'))
+        codec = data.get(b'codec', b'unknown').decode('utf-8')
+        resolution_str = data.get(b'resolution', b'0x0').decode('utf-8')
+        resolution = tuple(map(int, resolution_str.split('x')))
         
         return VideoFrame(
             image=image,
             timestamp=timestamp,
-            frame_number=frame_number
+            frame_number=frame_number,
+            quality_score=quality_score,
+            codec=codec,
+            resolution=resolution
         )

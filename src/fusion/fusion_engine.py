@@ -95,15 +95,25 @@ class FusionEngine:
     ) -> Dict[str, tuple]:
         """Collect available modality results with sufficient confidence.
         
-        Pure function that filters modalities based on confidence threshold.
+        Pure function that filters modalities based on confidence threshold (0.05).
+        This implements graceful degradation by excluding low-quality modality results
+        from the fusion process, allowing the system to continue with remaining
+        high-quality modalities.
         
         Args:
-            acoustic: Acoustic analysis result or None
-            visual: Visual analysis result or None
-            linguistic: Linguistic analysis result or None
+            acoustic: Acoustic analysis result or None if not available or failed
+            visual: Visual analysis result or None if not available or failed
+            linguistic: Linguistic analysis result or None if not available or failed
             
         Returns:
-            Dictionary mapping modality names to (result, confidence) tuples
+            Dictionary mapping modality names (str) to (result, confidence) tuples.
+            Only includes modalities with confidence > 0.05. Empty dict if no
+            modalities meet the threshold.
+            Example: {"acoustic": (AcousticResult(...), 0.85), "visual": (VisualResult(...), 0.72)}
+            
+        Validates:
+            - Req 6.1: System computes weighted combination based on signal quality
+            - Design: Graceful degradation when modalities fail or produce low-quality results
         """
         available = {}
         
@@ -157,13 +167,30 @@ class FusionEngine:
     def _emotion_to_score(self, emotion_scores: Dict[str, float]) -> float:
         """Convert emotion scores to sentiment score in [-1, 1] range.
         
-        Pure function that maps emotion categories to sentiment polarity.
+        Pure function that maps emotion categories to sentiment polarity using
+        a predefined polarity mapping. This enables consistent sentiment scoring
+        across all three modalities (acoustic, visual, linguistic) by converting
+        their emotion classifications to a unified sentiment scale.
+        
+        Polarity mapping:
+        - Positive emotions: happy (1.0), surprised (0.5)
+        - Neutral: neutral (0.0)
+        - Negative emotions: fearful (-0.3), disgust (-0.6), sad (-0.7), angry (-0.8)
+        
+        The final score is computed as a weighted average of polarities using the
+        emotion scores as weights, then clamped to [-1, 1] range.
         
         Args:
-            emotion_scores: Dictionary mapping emotion names to scores
+            emotion_scores: Dictionary mapping emotion names (str) to probability
+                           scores (float in [0, 1]). Example: {"happy": 0.7, "sad": 0.2, "neutral": 0.1}
             
         Returns:
-            Sentiment score in [-1, 1] range
+            Sentiment score in [-1, 1] range where -1 is very negative, 0 is neutral,
+            and 1 is very positive. Computed as weighted average of emotion polarities.
+            
+        Validates:
+            - Req 6.4: System normalizes score to consistent range [-1, 1]
+            - Prop 6: Fusion score normalization
         """
         # Emotion polarity mapping
         polarity_map = {
@@ -194,14 +221,30 @@ class FusionEngine:
     ) -> float:
         """Compute weighted average of modality scores.
         
-        Pure function that combines modality scores using computed weights.
+        Pure function that combines modality scores using quality-aware weights.
+        Each modality's emotion scores are first converted to a sentiment score
+        in [-1, 1] range, then combined using the normalized weights computed
+        from confidence levels and baseline weights.
+        
+        Formula: score = Σ(weight_m * sentiment_score_m) for all modalities m
         
         Args:
-            available: Dictionary of available modalities with (result, confidence) tuples
-            weights: Dictionary of normalized weights for each modality
+            available: Dictionary of available modalities with (result, confidence) tuples.
+                      Keys are modality names ("acoustic", "visual", "linguistic").
+                      Values are tuples of (analysis_result, confidence_score).
+            weights: Dictionary of normalized weights for each modality (sum to 1.0).
+                    Keys match modality names in available dict.
+                    Example: {"acoustic": 0.4, "visual": 0.35, "linguistic": 0.25}
             
         Returns:
-            Weighted average sentiment score in [-1, 1] range
+            Weighted average sentiment score in [-1, 1] range, clamped to ensure
+            valid output. Returns 0.0 if no modalities available or weights empty.
+            
+        Validates:
+            - Req 6.1: System computes weighted combination based on signal quality
+            - Req 6.2: System adjusts weights dynamically to favor higher-quality signals
+            - Req 6.4: System normalizes score to consistent range [-1, 1]
+            - Prop 7: Quality-weighted fusion
         """
         if not available or not weights:
             return 0.0
@@ -335,16 +378,29 @@ class FusionEngine:
         
         return smoothed_score
     
-    def _compute_confidence(self, weights: Dict[str, float]) -> float:
+    def _compute_confidence(
+        self,
+        weights: Dict[str, float],
+        acoustic: Optional[AcousticResult] = None,
+        visual: Optional[VisualResult] = None,
+        linguistic: Optional[LinguisticResult] = None
+    ) -> float:
         """Compute overall confidence based on modality weights and agreement.
         
-        Pure function that computes confidence from weight distribution.
+        Pure function that computes confidence from weight distribution and
+        sentiment agreement across modalities.
         
         Args:
             weights: Dictionary of normalized weights for each modality
+            acoustic: Acoustic analysis result or None
+            visual: Visual analysis result or None
+            linguistic: Linguistic analysis result or None
             
         Returns:
             Confidence score in [0, 1] range
+            
+        Validates:
+            - Req 6.3: System reports confidence levels that reflect disagreement
         """
         if not weights:
             return 0.0
@@ -352,6 +408,7 @@ class FusionEngine:
         # Confidence is higher when:
         # 1. More modalities are available
         # 2. Weights are more evenly distributed (less conflict)
+        # 3. Modalities agree on sentiment direction
         
         num_modalities = len(weights)
         max_modalities = 3
@@ -366,8 +423,34 @@ class FusionEngine:
         max_entropy = np.log(num_modalities) if num_modalities > 0 else 1.0
         distribution_factor = entropy / max_entropy if max_entropy > 0 else 0.0
         
-        # Combined confidence
-        confidence = 0.5 * availability_factor + 0.5 * distribution_factor
+        # Agreement factor: Check if modalities agree on sentiment direction
+        # Get sentiment scores from each modality
+        scores = []
+        if acoustic and acoustic.confidence > 0.05:
+            scores.append(self._emotion_to_score(acoustic.emotion_scores))
+        if visual and visual.confidence > 0.05:
+            scores.append(self._emotion_to_score(visual.emotion_scores))
+        if linguistic and linguistic.confidence > 0.05:
+            scores.append(self._emotion_to_score(linguistic.emotion_scores))
+        
+        # Compute agreement factor based on standard deviation of scores
+        if len(scores) >= 2:
+            std_score = np.std(scores)
+            # High std = low agreement = low confidence
+            # std ranges from 0 (perfect agreement) to ~1.0 (extreme disagreement)
+            # Map std to agreement factor: 0 std -> 1.0 agreement, 1.0 std -> 0.0 agreement
+            agreement_factor = max(0.0, 1.0 - std_score)
+        else:
+            # Only one modality, no disagreement possible
+            agreement_factor = 1.0
+        
+        # Combined confidence with agreement factor weighted more heavily
+        # When modalities disagree significantly, confidence should be low
+        confidence = (
+            0.3 * availability_factor +
+            0.2 * distribution_factor +
+            0.5 * agreement_factor
+        )
         
         # Clamp to [0, 1]
         confidence = max(0.0, min(1.0, confidence))
@@ -377,13 +460,30 @@ class FusionEngine:
     def _merge_emotions(self, available: Dict[str, tuple]) -> Dict[str, float]:
         """Merge emotion breakdowns from all modalities.
         
-        Pure function that combines emotion scores across modalities.
+        Pure function that combines emotion scores across modalities using
+        confidence-weighted averaging. Each modality's emotion scores are weighted
+        by its confidence level, then normalized to produce a unified emotion
+        breakdown that represents the combined assessment from all modalities.
+        
+        This provides transparency into which emotions are driving the overall
+        sentiment score, enabling users to understand the emotional composition
+        beyond just the unified sentiment value.
         
         Args:
-            available: Dictionary of available modalities with (result, confidence) tuples
+            available: Dictionary of available modalities with (result, confidence) tuples.
+                      Keys are modality names ("acoustic", "visual", "linguistic").
+                      Values are tuples of (analysis_result, confidence_score).
+                      Each result contains emotion_scores dict.
             
         Returns:
-            Dictionary mapping emotion names to merged scores
+            Dictionary mapping emotion names (str) to merged probability scores (float).
+            Scores are normalized to sum to 1.0, representing a probability distribution
+            over emotion categories. Returns {"neutral": 1.0} if no modalities available.
+            Example: {"happy": 0.6, "neutral": 0.25, "sad": 0.15}
+            
+        Validates:
+            - Req 7.2: System shows individual contributions from acoustic, visual, and linguistic analysis
+            - Design: Emotion category breakdown for transparency
         """
         if not available:
             return {"neutral": 1.0}
@@ -476,8 +576,8 @@ class FusionEngine:
             # Apply temporal smoothing
             smoothed_score = self._apply_smoothing(resolved_score)
             
-            # Compute confidence
-            confidence = self._compute_confidence(weights)
+            # Compute confidence (considering agreement across modalities)
+            confidence = self._compute_confidence(weights, acoustic, visual, linguistic)
             
             # Merge emotion breakdowns
             emotion_breakdown = self._merge_emotions(available)
@@ -514,8 +614,20 @@ class FusionEngine:
     def get_latest_score(self) -> Optional[SentimentScore]:
         """Get the most recent sentiment score from cache.
         
+        Provides non-blocking access to the latest fused sentiment score for
+        consumption by the UI layer or external APIs. This method is called
+        by the display interface to retrieve scores without waiting for the
+        next fusion cycle to complete.
+        
         Returns:
-            Latest SentimentScore or None if no fusion has been performed yet
+            Latest SentimentScore containing unified score, confidence, modality
+            contributions, emotion breakdown, and timestamp. Returns None if no
+            fusion has been performed yet (e.g., at system startup before first
+            fusion cycle completes).
+            
+        Validates:
+            - Req 7.1: System displays sentiment score with timestamp
+            - Design: Result caching with timestamps for non-blocking access
         """
         return self.latest_score
     

@@ -13,11 +13,15 @@ class AudioFrame:
         sample_rate: Sample rate in Hz (e.g., 16000)
         timestamp: Seconds since stream start
         duration: Frame duration in seconds
+        quality_score: Quality indicator (0.0 to 1.0), based on bitrate and codec
+        codec: Audio codec name (e.g., "aac", "mp3", "pcm")
     """
     samples: np.ndarray  # PCM audio samples
     sample_rate: int     # e.g., 16000 Hz
     timestamp: float     # seconds since stream start
     duration: float      # frame duration in seconds
+    quality_score: float = 1.0  # Quality indicator (0.0 to 1.0)
+    codec: str = "unknown"  # Audio codec name
     
     def __post_init__(self):
         """Validate audio frame data integrity.
@@ -56,10 +60,16 @@ class VideoFrame:
         image: RGB image as numpy array (H, W, 3)
         timestamp: Seconds since stream start
         frame_number: Sequential frame number
+        quality_score: Quality indicator (0.0 to 1.0), based on resolution and bitrate
+        codec: Video codec name (e.g., "h264", "vp9", "hevc")
+        resolution: Tuple of (width, height)
     """
     image: np.ndarray    # RGB image (H, W, 3)
     timestamp: float     # seconds since stream start
     frame_number: int
+    quality_score: float = 1.0  # Quality indicator (0.0 to 1.0)
+    codec: str = "unknown"  # Video codec name
+    resolution: tuple = (0, 0)  # (width, height)
     
     def __post_init__(self):
         """Validate video frame data integrity.

@@ -341,8 +341,11 @@ class AcousticAnalyzer:
             # Extract features
             features = self._extract_features(audio_frame)
             
-            # Assess audio quality
-            quality_score = self._assess_audio_quality(audio_frame, features)
+            # Assess audio quality (combine stream quality with analysis quality)
+            analysis_quality = self._assess_audio_quality(audio_frame, features)
+            stream_quality = audio_frame.quality_score
+            # Combined quality is the minimum of both (conservative approach)
+            quality_score = min(analysis_quality, stream_quality)
             
             # Classify emotion
             emotion_scores = self._classify_emotion(audio_frame)
@@ -511,10 +514,14 @@ class AcousticAnalyzer:
         sample_rate = int(data[b'sample_rate'])
         timestamp = float(data[b'timestamp'])
         duration = float(data[b'duration'])
+        quality_score = float(data.get(b'quality_score', b'1.0'))
+        codec = data.get(b'codec', b'unknown').decode('utf-8')
         
         return AudioFrame(
             samples=samples,
             sample_rate=sample_rate,
             timestamp=timestamp,
-            duration=duration
+            duration=duration,
+            quality_score=quality_score,
+            codec=codec
         )
