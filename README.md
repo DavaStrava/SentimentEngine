@@ -2,6 +2,8 @@
 
 Real-Time Multimedia Sentiment Analysis Engine - A proof-of-concept system that analyzes live multimedia streams to provide continuous emotional intelligence.
 
+> **🚀 Want to try it now?** See [`START_HERE.md`](START_HERE.md) for a 2-command quick start!
+
 ## Overview
 
 SentimentEngine processes acoustic, visual, and linguistic signals from live video feeds to generate a unified, real-time sentiment score. The system detects emotional shifts instantly—such as drops in confidence, spikes in excitement, or undertones of skepticism—transforming complex human emotion into actionable, objective data.
@@ -120,21 +122,30 @@ Once you've downloaded the models (see Setup step 3):
 python src/main.py --input path/to/video.mp4
 ```
 
-### Option 4: Run with Streamlit UI
+### Option 4: Run with Streamlit Web UI (Recommended!)
 
-Launch the interactive web interface:
+Launch the interactive web interface - **no Redis or video files required**:
 
 ```bash
-# Using the helper script
-./run_streamlit.sh
-
-# Or using Python launcher
-python run_app.py
+streamlit run run_web_ui.py
 ```
 
-The UI will be available at http://localhost:8501
+The UI will open automatically in your browser at http://localhost:8501
 
-**Note**: The Streamlit UI currently has some threading issues with asyncio. Use the demo script or automated tests for reliable testing.
+**What you'll see:**
+- Real-time sentiment analysis dashboard
+- Acoustic, visual, and linguistic contributions
+- Sentiment history chart
+- Emotion breakdown
+- Live confidence scores
+
+**How to use:**
+1. Click "🚀 Initialize System" (loads models, takes ~30 seconds)
+2. Click "▶️ Start" to begin processing
+3. Watch the sentiment scores update in real-time
+4. Click "⏹️ Stop" when done
+
+**Note**: This demo mode processes synthetic data to show you the system working. For real video processing, use Option 3.
 
 ### Option 5: Verify Setup
 
@@ -178,8 +189,9 @@ The system follows an asynchronous, event-driven architecture:
 
 ## Documentation
 
-- **Testing Guide**: `TESTING.md` - Comprehensive guide to all testing options
+- **Web UI Guide**: `WEB_UI_GUIDE.md` - Complete guide to the web interface
 - **Quick Start**: `QUICKSTART.md` - Get started in 5 minutes
+- **Testing Guide**: `TESTING.md` - Comprehensive guide to all testing options
 - Requirements: `.kiro/specs/realtime-sentiment-analysis/requirements.md`
 - Design: `.kiro/specs/realtime-sentiment-analysis/design.md`
 - Tasks: `.kiro/specs/realtime-sentiment-analysis/tasks.md`
